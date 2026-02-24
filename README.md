@@ -5,6 +5,8 @@ Application Python/Tkinter pour Windows qui pilote un modèle d'IA **local** (vi
 ## Fonctionnalités
 - Interface Tkinter (Windows/Linux) pour lancer un cycle autonome de développement.
 - Exécution locale sans API externe.
+- Utilisation par défaut d'un modèle léger compatible petites configurations RAM (`tinyllama:latest`).
+- Téléchargement automatique du modèle s'il est absent localement.
 - Actions pilotées par l'IA:
   - création de dossiers/fichiers,
   - lecture/modification de code,
@@ -19,10 +21,7 @@ Application Python/Tkinter pour Windows qui pilote un modèle d'IA **local** (vi
 ## Prérequis
 1. Python 3.10+
 2. Ollama installé localement
-3. Un modèle téléchargé localement, ex:
-   ```bash
-   ollama pull llama3.1
-   ```
+3. Ollama peut télécharger automatiquement un modèle léger (par défaut `tinyllama:latest`, ~1 Go ou moins selon la plateforme) au premier lancement.
 
 ## Lancement
 ```bash

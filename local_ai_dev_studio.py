@@ -33,10 +33,12 @@ Contraintes:
 - Corriger les erreurs de build/test dans les itérations suivantes.
 """.strip()
 
+LOW_RAM_MODEL = "tinyllama:latest"
+
 
 @dataclass
 class AgentConfig:
-    model: str = "llama3.1"
+    model: str = LOW_RAM_MODEL
     project_dir: str = ""
     description: str = ""
     language: str = "python"
@@ -50,6 +52,45 @@ class LocalLLMClient:
     def __init__(self, model: str, timeout: int = 120):
         self.model = model
         self.timeout = timeout
+
+    def ensure_model_ready(self, logger):
+        """Vérifie la présence du modèle local et le télécharge automatiquement si nécessaire."""
+        check_cmd = ["ollama", "show", self.model]
+        try:
+            result = subprocess.run(
+                check_cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("Ollama n'est pas installé ou introuvable dans le PATH.") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Vérification du modèle local trop longue.") from exc
+
+        if result.returncode == 0:
+            logger(f"Modèle prêt: {self.model}")
+            return
+
+        logger(f"Modèle absent ({self.model}). Téléchargement automatique en cours...")
+        pull_cmd = ["ollama", "pull", self.model]
+        try:
+            pulled = subprocess.run(
+                pull_cmd,
+                capture_output=True,
+                text=True,
+                timeout=1800,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Téléchargement du modèle {self.model} dépassé (timeout).") from exc
+
+        if pulled.returncode != 0:
+            stderr = pulled.stderr.strip() or "Erreur inconnue"
+            raise RuntimeError(f"Impossible de télécharger le modèle {self.model}: {stderr}")
+
+        logger(f"Téléchargement terminé: {self.model}")
 
     def generate(self, prompt: str) -> str:
         cmd = ["ollama", "run", self.model, prompt]
@@ -260,7 +301,7 @@ class App(tk.Tk):
         top.pack(fill="x", pady=6)
 
         self.project_var = tk.StringVar(value=str(Path.cwd() / "generated_project"))
-        self.model_var = tk.StringVar(value="llama3.1")
+        self.model_var = tk.StringVar(value=LOW_RAM_MODEL)
         self.lang_var = tk.StringVar(value="python")
         self.iter_var = tk.StringVar(value="40")
         self.loc_var = tk.StringVar(value="250000")
@@ -269,7 +310,7 @@ class App(tk.Tk):
         ttk.Entry(top, textvariable=self.project_var, width=70).grid(row=0, column=1, sticky="ew", padx=4, pady=4)
         ttk.Button(top, text="Parcourir", command=self._pick_project).grid(row=0, column=2, padx=4, pady=4)
 
-        ttk.Label(top, text="Modèle local (ollama):").grid(row=1, column=0, sticky="w", padx=4, pady=4)
+        ttk.Label(top, text="Modèle local (<= 1 Go RAM, ollama):").grid(row=1, column=0, sticky="w", padx=4, pady=4)
         ttk.Entry(top, textvariable=self.model_var, width=25).grid(row=1, column=1, sticky="w", padx=4, pady=4)
 
         ttk.Label(top, text="Langage:").grid(row=1, column=1, sticky="e", padx=4, pady=4)
@@ -321,6 +362,7 @@ class App(tk.Tk):
             root = Path(cfg.project_dir)
             root.mkdir(parents=True, exist_ok=True)
             llm = LocalLLMClient(cfg.model)
+            llm.ensure_model_ready(self._log)
             executor = WorkspaceExecutor(root=root, logger=self._log)
             self.agent = AutoDevAgent(cfg, llm=llm, executor=executor, logger=self._log)
             self.agent.run_cycle()
